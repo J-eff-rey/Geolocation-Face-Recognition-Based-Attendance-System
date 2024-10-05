@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geolocation and Face Recognition</title>
+</head>
+<body>
+    <h1>Geolocation and Face Recognition</h1>
+    <button id="startTrackingBtn">Start Location Verification</button>
+    <button id="captureImageBtn" disabled>Capture Image</button>
+    <video id="video" width="320" height="240" autoplay style="display:none;"></video>
+    <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+    <p id="status"></p>
+    <script>
+        let userId;
+
+        document.getElementById('startTrackingBtn').addEventListener('click', requestLocation);
+        document.getElementById('captureImageBtn').addEventListener('click', captureImage);
+
+        function requestLocation() {
+            const status = document.getElementById('status');
+
+            if (navigator.geolocation) {
+                status.textContent = "Requesting location...";
+                navigator.geolocation.getCurrentPosition(sendPosition, showError, { enableHighAccuracy: true });
+            } else {
+                status.textContent = "Geolocation is not supported by this browser.";
+            }
+        }
+
+        function sendPosition(position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+
+            fetch('https://ae03-14-139-161-250.ngrok-free.app/log_location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ latitude, longitude, user_id: userId }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "success") {
+                    document.getElementById('status').textContent = 'Location verified. You can now capture an image.';
+                    document.getElementById('captureImageBtn').disabled = false;
+                    startVideo();
+                } else {
+                    document.getElementById('status').textContent = 'Error: ' + data.message;
+                }
+            })
+            .catch((error) => {
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            });
+        }
+
+        function showError(error) {
+            const status = document.getElementById('status');
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    status.textContent = "User denied the request for Geolocation. Please allow access to location.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    status.textContent = "Location information is unavailable.";
+                    break;
+                case error.TIMEOUT:
+                    status.textContent = "The request to get user location timed out.";
+                    break;
+                case error.UNKNOWN_ERROR:
+                    status.textContent = "An unknown error occurred.";
+                    break;
+            }
+        }
+
+        function startVideo() {
+            const video = document.getElementById('video');
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                    video.style.display = 'block';
+                });
+            }
+        }
+
+        function captureImage() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const image_data_url = canvas.toDataURL('image/jpeg');
+            sendImage(image_data_url);
+        }
+
+        function sendImage(imageData) {
+            fetch('https://ae03-14-139-161-250.ngrok-free.app/verify_face', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').textContent = data.message;
+                if (data.status === "success") {
+                    userId = data.user_id;
+                    stopVideo();
+                    document.getElementById('status').textContent += ` User ID: ${userId}`;
+                }
+            })
+            .catch((error) => {
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+            });
+        }
+
+        function stopVideo() {
+            const video = document.getElementById('video');
+            const stream = video.srcObject;
+            const tracks = stream.getTracks();
+
+            tracks.forEach(track => track.stop());
+            video.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
